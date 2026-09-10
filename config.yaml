@@ -1,0 +1,15 @@
+# One entry per ESPN league. team_id is your own team's ID within that league
+# (visible in the URL when you view your team, e.g. .../teamId=4).
+leagues:
+  - name: "League One"
+    league_id: 000000
+    year: 2026
+    team_id: 0
+  - name: "League Two"
+    league_id: 000000
+    year: 2026
+    team_id: 0
+  - name: "League Three"
+    league_id: 000000
+    year: 2026
+    team_id: 0
