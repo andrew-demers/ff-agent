@@ -13,3 +13,11 @@ leagues:
     league_id: 490952264
     year: 2026
     team_id: 7
+
+# Optional: same-week analysis pulled from The Fantasy Footballers podcast's
+# YouTube auto-captions (via yt-dlp). Set enabled: false to turn it off
+# without touching code.
+podcast:
+  enabled: true
+  channel: "https://www.youtube.com/@TheFantasyFootballers/videos"
+  max_episodes: 8

@@ -1,11 +1,18 @@
 """Wraps espn_api to pull the data we need for a single league: current
 roster/lineup, injury status, top available free agents (including
 dedicated kicker and D/ST pools, which otherwise get crowded out of the
-general free-agent list), this week's matchup, and each rostered player's
-week-by-week scoring history so far this season."""
+general free-agent list), this week's matchup, each rostered player's
+week-by-week scoring history so far this season, and - when games for the
+current week are underway or finished - live actual scoring pulled from
+ESPN's box scores."""
 
+import sys
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+
 from espn_api.football import League
+
+from .news import fetch_player_news
 
 BENCH_SLOTS = {"BE", "IR"}
 
@@ -24,8 +31,12 @@ class PlayerSnapshot:
     avg_points: float
     percent_owned: float
     percent_started: float
+    player_id: int = 0
     recent_points: list = field(default_factory=list)
     pro_opponent: str = ""
+    live_points: float = None
+    game_status: str = ""
+    news: list = field(default_factory=list)
 
 
 @dataclass
@@ -42,6 +53,10 @@ class LeagueSnapshot:
     opponent_starters: list = field(default_factory=list)
     free_agent_kickers: list = field(default_factory=list)
     free_agent_defenses: list = field(default_factory=list)
+    live_score: float = None
+    live_opponent_score: float = None
+    any_games_started: bool = False
+    first_kickoff: datetime = None
 
 
 def _recent_points(player, current_week: int) -> list:
@@ -79,7 +94,13 @@ def _pro_opponent(player, current_week: int = None) -> str:
     return ""
 
 
-def _snapshot_player(player, current_week: int = None) -> PlayerSnapshot:
+def _snapshot_player(player, current_week: int = None, live_player=None) -> PlayerSnapshot:
+    live_points = None
+    game_status = ""
+    if live_player is not None:
+        live_points = round(getattr(live_player, "points", 0) or 0, 1)
+        game_status = _game_status(live_player)
+
     return PlayerSnapshot(
         name=player.name,
         position=player.position,
@@ -90,14 +111,75 @@ def _snapshot_player(player, current_week: int = None) -> PlayerSnapshot:
         avg_points=round(getattr(player, "avg_points", 0) or 0, 1),
         percent_owned=round(getattr(player, "percent_owned", 0) or 0, 1),
         percent_started=round(getattr(player, "percent_started", 0) or 0, 1),
+        player_id=getattr(player, "playerId", 0),
         recent_points=_recent_points(player, current_week) if current_week else [],
         pro_opponent=_pro_opponent(player, current_week),
+        live_points=live_points,
+        game_status=game_status,
     )
 
 
-def fetch_league_snapshot(name: str, league_id: int, year: int, team_id: int,
-                           espn_s2: str, swid: str, free_agent_size: int = 30) -> LeagueSnapshot:
-    league = League(league_id=league_id, year=year, espn_s2=espn_s2, swid=swid)
+def _game_status(box_player) -> str:
+    """Where a player's real-world game stands, for a box-score player.
+
+    `box_player.game_played` is not ESPN data - it's the library's own
+    kickoff-plus-3-hours heuristic - so we reproduce that same heuristic
+    here rather than lean on a flag that looks more authoritative than it is.
+    """
+    if getattr(box_player, "on_bye_week", False):
+        return "BYE"
+    game_date = getattr(box_player, "game_date", None)
+    if game_date is None:
+        return "unknown"
+    now = datetime.now()
+    if now < game_date:
+        return "not started"
+    if now < game_date + timedelta(hours=3):
+        return "in progress"
+    return "final"
+
+
+def _live_lineups(league, team_id: int):
+    """Best-effort live box-score data for this week's matchup: per-player
+    live points/status for both this team's and the opponent's lineup, plus
+    each team's live score. Live data is an enhancement, never something
+    that should break a run, so any failure here just falls back to
+    projections-only (empty dict, None scores).
+
+    Returns (live_by_player_id, own_live_score, opponent_live_score).
+    """
+    try:
+        box_scores = league.box_scores()
+    except Exception as e:
+        print(f"  Warning: failed to fetch live box scores: {e}", file=sys.stderr)
+        return {}, None, None
+
+    for box in box_scores:
+        home_id = getattr(box.home_team, "team_id", None)
+        away_id = getattr(box.away_team, "team_id", None)
+        if team_id not in (home_id, away_id):
+            continue
+        if home_id == team_id:
+            own_lineup, own_score, opp_lineup, opp_score = (
+                box.home_lineup, box.home_score, box.away_lineup, box.away_score,
+            )
+        else:
+            own_lineup, own_score, opp_lineup, opp_score = (
+                box.away_lineup, box.away_score, box.home_lineup, box.home_score,
+            )
+        live_by_id = {p.playerId: p for p in own_lineup + opp_lineup}
+        return live_by_id, own_score, opp_score
+
+    # No matchup found for this team this week (e.g. a bye week matchup).
+    return {}, None, None
+
+
+def build_league(league_id: int, year: int, espn_s2: str, swid: str) -> League:
+    return League(league_id=league_id, year=year, espn_s2=espn_s2, swid=swid)
+
+
+def fetch_league_snapshot(name: str, league: League, team_id: int,
+                           free_agent_size: int = 30) -> LeagueSnapshot:
     current_week = league.current_week
 
     team = next((t for t in league.teams if t.team_id == team_id), None)
@@ -107,7 +189,17 @@ def fetch_league_snapshot(name: str, league_id: int, year: int, team_id: int,
             f"Available team_ids: {[t.team_id for t in league.teams]}"
         )
 
-    roster = [_snapshot_player(p, current_week) for p in team.roster]
+    live_by_id, live_score, live_opponent_score = _live_lineups(league, team_id)
+
+    roster = [_snapshot_player(p, current_week, live_by_id.get(p.playerId)) for p in team.roster]
+
+    kickoffs = [
+        live_by_id[p.playerId].game_date
+        for p in team.roster
+        if p.playerId in live_by_id and getattr(live_by_id[p.playerId], "game_date", None) is not None
+    ]
+    first_kickoff = min(kickoffs) if kickoffs else None
+    any_games_started = any(p.game_status in ("in progress", "final") for p in roster)
 
     free_agents = [
         _snapshot_player(p)
@@ -129,15 +221,24 @@ def fetch_league_snapshot(name: str, league_id: int, year: int, team_id: int,
     opponent = team.schedule[current_week - 1]
     opponent_starters = sorted(
         (
-            _snapshot_player(p, current_week)
+            _snapshot_player(p, current_week, live_by_id.get(p.playerId))
             for p in opponent.roster
             if getattr(p, "lineupSlot", "") not in BENCH_SLOTS
         ),
         key=lambda p: p.lineup_slot,
     )
 
-    # Only fully-played weeks have a real score; drop the current (in-progress) week.
+    # Only fully-played weeks have a real score; drop the current (in-progress) week -
+    # its live number comes from the box score above instead.
     team_weekly_scores = [round(s, 1) for s in team.scores[: current_week - 1]]
+
+    # Same-day news, joined by ESPN's own player id - only for the players
+    # that actually reach the prompt, so we're not paginating news for 30
+    # free agents when only the top slice of each pool gets shown.
+    news_candidates = roster + free_agents[:20] + free_agent_kickers[:5] + free_agent_defenses[:5]
+    news_by_id = fetch_player_news([p.player_id for p in news_candidates])
+    for p in news_candidates:
+        p.news = news_by_id.get(p.player_id, [])
 
     return LeagueSnapshot(
         league_name=name,
@@ -152,4 +253,8 @@ def fetch_league_snapshot(name: str, league_id: int, year: int, team_id: int,
         opponent_starters=opponent_starters,
         free_agent_kickers=free_agent_kickers,
         free_agent_defenses=free_agent_defenses,
+        live_score=live_score,
+        live_opponent_score=live_opponent_score,
+        any_games_started=any_games_started,
+        first_kickoff=first_kickoff,
     )

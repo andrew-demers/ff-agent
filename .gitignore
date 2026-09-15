@@ -26,6 +26,12 @@ htmlcov/
 reports/
 *.log
 
+# Podcast caption cache - safe to delete, just gets re-fetched
+cache/
+
+# NOT history/ - unlike reports/, that's this tool's only durable state
+# (past calls and their graded results), so it's meant to be kept/versioned.
+
 # Editors / OS
 .DS_Store
 .idea/

@@ -1,9 +1,14 @@
 # ff-agent
 
-Pulls your roster, injury status, and available free agents from ESPN
-Fantasy Football (across any number of leagues) and asks Claude for
-start/sit and waiver-wire recommendations. Run it manually once a week,
-e.g. the morning waivers process.
+Pulls your roster, injury status, live in-week scoring, same-day player
+news, and available free agents from ESPN Fantasy Football (across any
+number of leagues) - plus this week's relevant Fantasy Footballers podcast
+analysis - and asks Claude for start/sit and waiver-wire recommendations.
+It also tracks its own past calls and grades them once the results are in,
+so later runs can calibrate against how its projections have actually
+played out. Run it manually whenever you want an update - the morning
+waivers process, mid-week, or Sunday morning before lineups lock; it just
+reflects whatever has happened by the time you run it.
 
 ## Setup
 
@@ -40,6 +45,14 @@ e.g. the morning waivers process.
    - `team_id` - in the URL when viewing your team, e.g.
      `...teamId=4...`.
 
+   The optional `podcast:` block controls the Fantasy Footballers podcast
+   integration (see below) - set `enabled: false` to turn it off.
+
+5. Podcast analysis needs [`yt-dlp`](https://github.com/yt-dlp/yt-dlp)
+   installed and on your `PATH` (`brew install yt-dlp`). If it's missing,
+   or a network/captions fetch fails, that run just skips the podcast
+   section - it never blocks a report.
+
 ## Run
 
 ```
@@ -47,14 +60,49 @@ python main.py
 ```
 
 This prints a recommendation report for each league to the console and
-saves a copy under `reports/`.
+saves a copy under `reports/`. Run it as often as you like during the
+week - Thursday night, Sunday morning, whenever - it reflects whatever has
+actually happened by the time you run it (see "Live data" below).
+
+To force a specific past week to be (re)graded - e.g. after ESPN applies a
+stat correction, or to grade the season's final week once
+`league.current_week` stops advancing - run:
+
+```
+python main.py --regrade-week 3
+```
+
+This regrades week 3 for every league and exits without fetching new
+recommendations.
+
+## What's in a report
+
+- **Live data.** If any of this week's games have started, a `LIVE` block
+  reflects real, already-scored points (via ESPN's live box scores) rather
+  than pre-week projections, and the model is told to treat those players
+  as locked - no more "bench him" for someone whose game already happened.
+- **Same-day news.** Recent player news (injury updates, beat-reporter
+  notes) is pulled from ESPN's own player-news feed, joined by player ID -
+  more current than the static injury designation, which can go stale.
+- **Podcast analysis.** This week's relevant Fantasy Footballers episodes
+  (waiver wire / start-sit) are found on their YouTube channel and their
+  auto-generated captions are searched for mentions of your roster and
+  top free agents. It's expert opinion, not data - the report attributes
+  it explicitly, and captions are auto-transcribed so player names can be
+  garbled. Captions are cached under `cache/podcast/` so re-runs in the
+  same week don't re-fetch.
+- **Past results.** Each report's start/sit and waiver calls are logged to
+  `history/<league>_<season>.jsonl`. Once a week's games are over, those
+  calls get graded against what actually happened, and a summary (bench
+  regret vs. the best legal lineup, and how far off ESPN's projections ran
+  by position) feeds into the next report as calibration. `history/` is
+  this tool's only durable state, so unlike `reports/` it isn't gitignored.
 
 ## Notes
 
 - `espn_s2` and `SWID` are session cookies and will eventually expire -
   if fetches start failing with an auth error, grab fresh values from your
   browser and update `.env`.
-- The recommendations are based only on ESPN's own stats, projections, and
-  injury designations - there's no external news feed wired in yet. If you
-  want headline-level news (e.g. beat-reporter reports) factored in, that
-  would need a separate news source added to `src/`.
+- All of the above - live scoring, news, podcast analysis, past-results
+  grading - degrade gracefully: a failure in any one of them prints a
+  warning and the run continues with whatever it does have.
