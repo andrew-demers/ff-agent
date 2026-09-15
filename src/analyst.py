@@ -27,10 +27,14 @@ Produce a concise report with three sections:
    should be benched), say who to start and who to sit, and why in one \
    sentence. Weigh recent-week trends alongside projections and, where it \
    matters, how a player's matchup stacks up against the opponent's \
-   starters at the same position.
+   starters at the same position. Explicitly cover the kicker and D/ST \
+   slots every week, even if the call is just to confirm the current \
+   starter is still the right one.
 2. Waiver Wire Pickups: rank the top 3-5 free agents worth adding this \
    week, with a one-sentence reason each, and who on the current roster \
-   (if anyone) they'd replace.
+   (if anyone) they'd replace. Consider the kicker and D/ST free-agent \
+   pools every week alongside skill positions, not just when there's an \
+   injury forcing the issue.
 3. Things to Watch: flag anything else worth keeping an eye on - injuries, \
    byes, hot or cold streaks in the recent-week data, and any part of this \
    week's matchup against the opponent's roster that could swing the \
@@ -55,6 +59,8 @@ def _format_player(p) -> str:
 def build_user_prompt(snapshot: LeagueSnapshot) -> str:
     roster_lines = "\n".join(_format_player(p) for p in snapshot.roster)
     fa_lines = "\n".join(_format_player(p) for p in snapshot.free_agents[:20])
+    k_lines = "\n".join(_format_player(p) for p in snapshot.free_agent_kickers[:5])
+    dst_lines = "\n".join(_format_player(p) for p in snapshot.free_agent_defenses[:5])
     opponent_lines = "\n".join(_format_player(p) for p in snapshot.opponent_starters)
 
     return (
@@ -65,7 +71,9 @@ def build_user_prompt(snapshot: LeagueSnapshot) -> str:
         f"THIS WEEK'S OPPONENT: {snapshot.opponent_name} (record {snapshot.opponent_record})\n"
         f"OPPONENT'S PROJECTED STARTERS:\n{opponent_lines}\n\n"
         f"CURRENT ROSTER:\n{roster_lines}\n\n"
-        f"TOP AVAILABLE FREE AGENTS:\n{fa_lines}\n"
+        f"TOP AVAILABLE FREE AGENTS (skill positions):\n{fa_lines}\n\n"
+        f"AVAILABLE FREE AGENT KICKERS:\n{k_lines}\n\n"
+        f"AVAILABLE FREE AGENT DEFENSES/D-ST:\n{dst_lines}\n"
     )
 
 

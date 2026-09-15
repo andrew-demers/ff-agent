@@ -1,7 +1,8 @@
 """Wraps espn_api to pull the data we need for a single league: current
-roster/lineup, injury status, top available free agents, this week's
-matchup, and each rostered player's week-by-week scoring history so far
-this season."""
+roster/lineup, injury status, top available free agents (including
+dedicated kicker and D/ST pools, which otherwise get crowded out of the
+general free-agent list), this week's matchup, and each rostered player's
+week-by-week scoring history so far this season."""
 
 from dataclasses import dataclass, field
 from espn_api.football import League
@@ -39,6 +40,8 @@ class LeagueSnapshot:
     roster: list = field(default_factory=list)
     free_agents: list = field(default_factory=list)
     opponent_starters: list = field(default_factory=list)
+    free_agent_kickers: list = field(default_factory=list)
+    free_agent_defenses: list = field(default_factory=list)
 
 
 def _recent_points(player, current_week: int) -> list:
@@ -109,9 +112,19 @@ def fetch_league_snapshot(name: str, league_id: int, year: int, team_id: int,
     free_agents = [
         _snapshot_player(p)
         for p in league.free_agents(size=free_agent_size)
+        if p.position not in ("K", "D/ST")
     ]
     # Surface the most relevant waiver targets first: highest recent trend, then projection.
     free_agents.sort(key=lambda p: (p.percent_started, p.projected_points), reverse=True)
+
+    # Kickers and D/ST rarely crack the top of the general free-agent pool
+    # (it's sorted by percent owned across all positions), so pull them as
+    # their own guaranteed groups rather than risk them getting crowded out.
+    free_agent_kickers = [_snapshot_player(p) for p in league.free_agents(position="K", size=8)]
+    free_agent_kickers.sort(key=lambda p: (p.projected_points, p.percent_owned), reverse=True)
+
+    free_agent_defenses = [_snapshot_player(p) for p in league.free_agents(position="D/ST", size=8)]
+    free_agent_defenses.sort(key=lambda p: (p.projected_points, p.percent_owned), reverse=True)
 
     opponent = team.schedule[current_week - 1]
     opponent_starters = sorted(
@@ -137,4 +150,6 @@ def fetch_league_snapshot(name: str, league_id: int, year: int, team_id: int,
         roster=roster,
         free_agents=free_agents,
         opponent_starters=opponent_starters,
+        free_agent_kickers=free_agent_kickers,
+        free_agent_defenses=free_agent_defenses,
     )
