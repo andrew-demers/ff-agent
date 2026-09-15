@@ -13,7 +13,7 @@ import yaml
 from dotenv import load_dotenv
 
 from src.espn_client import fetch_league_snapshot
-from src.claude_analyst import get_recommendations
+from src.analyst import get_recommendations
 from src.report import write_report
 
 
@@ -26,7 +26,8 @@ def main():
         print("Missing ESPN_S2 or SWID in your .env file. See .env.example.", file=sys.stderr)
         sys.exit(1)
 
-    if not os.environ.get("ANTHROPIC_API_KEY"):
+    llm_provider = os.environ.get("LLM_PROVIDER", "anthropic").lower()
+    if llm_provider == "anthropic" and not os.environ.get("ANTHROPIC_API_KEY"):
         print("Missing ANTHROPIC_API_KEY in your .env file. See .env.example.", file=sys.stderr)
         sys.exit(1)
 

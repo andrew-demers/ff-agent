@@ -16,6 +16,10 @@ def write_report(snapshot: LeagueSnapshot, recommendations: str) -> str:
 
     with open(path, "w") as f:
         f.write(f"# {snapshot.league_name} - {snapshot.team_name} - Week {snapshot.week}\n\n")
+        f.write(
+            f"Record: {snapshot.team_record} | This week vs {snapshot.opponent_name} "
+            f"({snapshot.opponent_record})\n\n"
+        )
         f.write(recommendations.strip() + "\n")
 
     return path

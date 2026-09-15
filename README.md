@@ -25,7 +25,12 @@ e.g. the morning waivers process.
 
    - `ESPN_S2`, `SWID` - from step 2. These are the same across all your
      ESPN leagues since they're tied to your ESPN login, not a specific league.
-   - `ANTHROPIC_API_KEY` - from https://console.anthropic.com.
+   - `LLM_PROVIDER` - `anthropic` (default) or `ollama`.
+   - `ANTHROPIC_API_KEY` - from https://console.anthropic.com. Required if
+     `LLM_PROVIDER=anthropic`.
+   - `OLLAMA_MODEL`, `OLLAMA_HOST` - only used if `LLM_PROVIDER=ollama`. Requires
+     a local Ollama server running (`ollama serve`) with the model pulled
+     (`ollama pull llama3.1`).
 
 4. Edit `config.yaml` with your three leagues. For each one you need:
 
