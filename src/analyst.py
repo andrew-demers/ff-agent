@@ -145,10 +145,13 @@ numbered list in strict priority order - #1 is the add you'd make first if \
 you could only make one - with a one-sentence reason each and a specific \
 current-roster player they'd replace. Every add needs a named drop, even \
 if the roster has a technically open bench spot - a real waiver claim \
-still needs one lined up in case it's needed, so name whichever rostered \
-player is currently least valuable at that position. Weigh roster need \
-(from ROSTER DEPTH) alongside player quality and opportunity when \
-ordering, not name recognition.
+still needs one lined up in case it's needed. Use WEAKEST BENCH PLAYERS as \
+your starting point for who's droppable - it's ranked most-droppable-first \
+by projected points and ownership - rather than re-deriving "least \
+valuable" yourself; only pick someone not on that list if you name the \
+specific reason they outrank it (e.g. a real handcuff, or a bye-week fill-in \
+who returns to value soon). Weigh roster need (from ROSTER DEPTH) alongside \
+player quality and opportunity when ordering, not name recognition.
 Treat the kicker and D/ST slots as weekly streaming spots, not just \
 injury or bye backfills: every week, name the free-agent kicker and the \
 free-agent D/ST with the best matchup - use projected points, which \
@@ -244,6 +247,33 @@ def _format_roster_depth(snapshot: LeagueSnapshot) -> str:
     if bye_lines:
         section += "\n\nUPCOMING BYES (next 4 weeks):\n" + "\n".join(bye_lines)
     return section
+
+
+def _format_bench_weakness(snapshot: LeagueSnapshot) -> str:
+    """Bench players ranked most-droppable-first (lowest projected points
+    this week, then lowest season-long ownership), so a waiver add's drop
+    recommendation can point at a specific ranked name instead of the
+    model re-deriving 'least valuable' by eyeballing every stat column
+    across the full roster."""
+    bench = [p for p in snapshot.roster if p.lineup_slot == "BE"]
+    if not bench:
+        return ""
+    bench = sorted(bench, key=lambda p: (p.projected_points, p.percent_owned))
+
+    lines = []
+    for p in bench[:5]:
+        flags = []
+        if p.injury_status not in HEALTHY_STATUSES:
+            flags.append(p.injury_status)
+        if p.pro_opponent == "BYE":
+            flags.append("BYE this week")
+        flag_str = f" ({', '.join(flags)})" if flags else ""
+        lines.append(f"  {p.name} ({p.position}): proj {p.projected_points}, owned {p.percent_owned}%{flag_str}")
+
+    return (
+        "WEAKEST BENCH PLAYERS (lowest projected points + ownership, most "
+        "droppable first):\n" + "\n".join(lines)
+    )
 
 
 def _format_live_block(snapshot: LeagueSnapshot) -> str:
@@ -382,6 +412,7 @@ def build_waiver_prompt(snapshot: LeagueSnapshot, podcast_excerpts: list = None)
         f"{faab_line}"
         f"CURRENT ROSTER:\n{roster_lines}\n\n"
         f"{_format_roster_depth(snapshot)}\n\n"
+        f"{_format_bench_weakness(snapshot)}\n\n"
         f"{fa_sections}\n\n"
         f"AVAILABLE FREE AGENT KICKERS:\n{k_lines}\n\n"
         f"AVAILABLE FREE AGENT DEFENSES/D-ST:\n{dst_lines}\n"
