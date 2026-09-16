@@ -2,10 +2,13 @@
 server) and gets back start/sit and waiver-wire recommendations."""
 
 import os
+from collections import defaultdict
 from datetime import datetime
 
 from .espn_client import LeagueSnapshot
 from .news import format_age
+
+HEALTHY_STATUSES = {"ACTIVE", ""}
 
 DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-5"
 DEFAULT_OLLAMA_MODEL = "llama3.1"
@@ -58,11 +61,18 @@ Produce a concise report with three sections:
    starters at the same position. Explicitly cover the kicker and D/ST \
    slots every week, even if the call is just to confirm the current \
    starter is still the right one.
-2. Waiver Wire Pickups: rank the top 3-5 free agents worth adding this \
-   week, with a one-sentence reason each, and who on the current roster \
-   (if anyone) they'd replace. Consider the kicker and D/ST free-agent \
-   pools every week alongside skill positions, not just when there's an \
-   injury forcing the issue.
+2. Waiver Wire Pickups: start from the ROSTER DEPTH data - name the \
+   position(s) that are thinnest (fewest bench players) or carry the \
+   biggest single-point-of-failure risk (a starter who's hurt or on bye \
+   with no healthy same-position backup), and prioritize free agents that \
+   add insurance there. Then list the top 3-5 free agents worth adding \
+   this week as a numbered list in strict priority order - #1 is the add \
+   you'd make first if you could only make one - with a one-sentence \
+   reason each and who on the current roster (if anyone) they'd replace. \
+   Weigh roster need (from ROSTER DEPTH) alongside player quality and \
+   opportunity when ordering, not name recognition. Consider the kicker \
+   and D/ST free-agent pools every week alongside skill positions, not \
+   just when there's an injury forcing the issue.
 3. Things to Watch: flag anything else worth keeping an eye on - injuries, \
    byes, hot or cold streaks in the recent-week data, and any part of this \
    week's matchup against the opponent's roster that could swing the \
@@ -96,6 +106,37 @@ def _format_player(p) -> str:
         f"proj pts: {p.projected_points} | owned: {p.percent_owned}% | "
         f"started: {p.percent_started}%{recent}{opponent}{live}"
     )
+
+
+def _format_roster_depth(snapshot: LeagueSnapshot) -> str:
+    """Bench depth by position, plus any starter who's hurt or on bye with
+    no healthy same-position bench player behind them. Computed directly
+    from the roster rather than left for the model to eyeball from a flat
+    15-player list, so 'what am I lacking' is grounded in an actual count."""
+    by_position = defaultdict(list)
+    for p in snapshot.roster:
+        if p.lineup_slot != "IR":
+            by_position[p.position].append(p)
+
+    depth_lines, risk_lines = [], []
+    for position, players in sorted(by_position.items()):
+        starters = [p for p in players if p.lineup_slot != "BE"]
+        bench = [p for p in players if p.lineup_slot == "BE"]
+        depth_lines.append(f"  {position}: {len(starters)} starting, {len(bench)} bench")
+
+        healthy_bench = any(
+            p.injury_status in HEALTHY_STATUSES and p.pro_opponent != "BYE" for p in bench
+        )
+        for starter in starters:
+            at_risk = starter.injury_status not in HEALTHY_STATUSES or starter.pro_opponent == "BYE"
+            if at_risk and not healthy_bench:
+                reason = "BYE" if starter.pro_opponent == "BYE" else starter.injury_status
+                risk_lines.append(f"  {position}: {starter.name} ({reason}), no healthy bench behind them")
+
+    section = "ROSTER DEPTH (bench count by position):\n" + "\n".join(depth_lines)
+    if risk_lines:
+        section += "\n\nNO BACKUP AT RISK:\n" + "\n".join(risk_lines)
+    return section
 
 
 def _format_live_block(snapshot: LeagueSnapshot) -> str:
@@ -163,6 +204,7 @@ def build_user_prompt(snapshot: LeagueSnapshot, podcast_excerpts: list = None,
         f"THIS WEEK'S OPPONENT: {snapshot.opponent_name} (record {snapshot.opponent_record})\n"
         f"OPPONENT'S PROJECTED STARTERS:\n{opponent_lines}\n\n"
         f"CURRENT ROSTER:\n{roster_lines}\n\n"
+        f"{_format_roster_depth(snapshot)}\n\n"
         f"TOP AVAILABLE FREE AGENTS (skill positions):\n{fa_lines}\n\n"
         f"AVAILABLE FREE AGENT KICKERS:\n{k_lines}\n\n"
         f"AVAILABLE FREE AGENT DEFENSES/D-ST:\n{dst_lines}\n"
