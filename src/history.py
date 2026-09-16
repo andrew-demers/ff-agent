@@ -107,6 +107,7 @@ def parse_calls(raw: str):
             "kind": "waiver",
             "add_name": entry.get("add"),
             "drop_name": entry.get("drop"),
+            "faab_bid": entry.get("faab_bid"),
         })
     return calls, None
 
@@ -185,6 +186,7 @@ def record_calls(slug: str, season: int, week: int, snapshot, report_texts: list
                 "add": resolve_player(call["add_name"], index, player_map_by_name),
                 "drop": (resolve_player(call["drop_name"], index, player_map_by_name)
                          if call["drop_name"] else None),
+                "faab_bid": call.get("faab_bid"),
             })
 
     record = {

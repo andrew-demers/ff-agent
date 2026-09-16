@@ -68,6 +68,13 @@ saves a copy under `reports/`. Run it as often as you like during the
 week - Thursday night, Sunday morning, whenever - it reflects whatever has
 actually happened by the time you run it (see "Live data" below).
 
+To run just one of the two agents instead of both:
+
+```
+python main.py --only lineup    # start/sit + things to watch only
+python main.py --only waivers   # waiver-wire pickups only
+```
+
 To force a specific past week to be (re)graded - e.g. after ESPN applies a
 stat correction, or to grade the season's final week once
 `league.current_week` stops advancing - run:
@@ -98,7 +105,11 @@ A report has two parts, each written by its own focused call to the model:
   streamer. The model is also asked to flag a speculative "stash for
   later" pick when a thin position has a bye coming up in the next few
   weeks, or when a free agent's ownership is running well ahead of their
-  start rate (a sign the league is already quietly stashing them).
+  start rate (a sign the league is already quietly stashing them). In a
+  league that uses FAAB (free-agent budget bidding, detected from your
+  league's own settings - no config needed), each pick also gets a
+  suggested dollar bid sized against your remaining budget; leagues on
+  rotating waiver priority just get the priority order.
 
 Supporting both of the above:
 

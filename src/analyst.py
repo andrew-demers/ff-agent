@@ -121,6 +121,17 @@ than presenting it as your own finding, and when it conflicts with the \
 ESPN projections or your own read, say so and pick a side rather than \
 blending them into mush.
 
+If a FAAB BUDGET line is present, this league uses free-agent budget \
+bidding instead of rotating waiver priority - suggest a specific dollar \
+bid for every add in your list, sized against the remaining budget given, \
+not just a priority rank. A thin-position must-add should get a real \
+percentage of what's left; a speculative "stash for later" pick or a \
+K/D-ST streamer should get $0-1, since losing that bid costs nothing. Your \
+bids should be internally consistent with your own priority order - the \
+#1 pick shouldn't get a lower bid than #2 without an explicit reason. If \
+no FAAB BUDGET line is present, this league uses rotating waiver priority \
+- don't suggest bids, just the priority order already described below.
+
 Produce a concise report with one section:
 Waiver Wire Pickups: start from the ROSTER DEPTH data - name the \
 position(s) that are thinnest (fewest bench players) or carry the biggest \
@@ -168,12 +179,14 @@ every waiver call you actually made above (omit it entirely if you made \
 none), in this exact form and nothing else after it:
 
 <!--calls
-{"waivers": [{"add": "<player name>", "drop": "<player name or null>"}]}
+{"waivers": [{"add": "<player name>", "drop": "<player name or null>", "faab_bid": <dollar amount or null>}]}
 -->
 
-Use each player's exact name as given in the data above. This block is \
-parsed by code, not read by the owner - it must be the last thing in your \
-response, valid JSON inside the HTML comment, with no other text after it."""
+Set faab_bid to the dollar amount you suggested for that add, or null if \
+no FAAB BUDGET line was given (rotating priority league). Use each \
+player's exact name as given in the data above. This block is parsed by \
+code, not read by the owner - it must be the last thing in your response, \
+valid JSON inside the HTML comment, with no other text after it."""
 
 
 def _format_player(p) -> str:
@@ -351,10 +364,16 @@ def build_waiver_prompt(snapshot: LeagueSnapshot, podcast_excerpts: list = None)
         [e for e in (podcast_excerpts or []) if e.get("kind") == "waivers"]
     )
 
+    faab_line = (
+        f"FAAB BUDGET: ${snapshot.faab_remaining} remaining of ${snapshot.faab_budget} total\n\n"
+        if snapshot.faab_enabled else ""
+    )
+
     parts = [
         f"League: {snapshot.league_name}\n"
         f"Team: {snapshot.team_name} (record {snapshot.team_record})\n"
         f"Week: {snapshot.week}\n\n"
+        f"{faab_line}"
         f"CURRENT ROSTER:\n{roster_lines}\n\n"
         f"{_format_roster_depth(snapshot)}\n\n"
         f"{fa_sections}\n\n"

@@ -68,6 +68,9 @@ class LeagueSnapshot:
     live_opponent_score: float = None
     any_games_started: bool = False
     first_kickoff: datetime = None
+    faab_enabled: bool = False
+    faab_budget: int = 0
+    faab_remaining: int = 0
 
 
 def _recent_points(player, current_week: int) -> list:
@@ -222,6 +225,10 @@ def fetch_league_snapshot(name: str, league: League, team_id: int) -> LeagueSnap
 
     roster = [_snapshot_player(p, current_week, live_by_id.get(p.playerId)) for p in team.roster]
 
+    faab_enabled = league.settings.faab
+    faab_budget = league.settings.acquisition_budget if faab_enabled else 0
+    faab_remaining = (faab_budget - team.acquisition_budget_spent) if faab_enabled else 0
+
     kickoffs = [
         live_by_id[p.playerId].game_date
         for p in team.roster
@@ -291,4 +298,7 @@ def fetch_league_snapshot(name: str, league: League, team_id: int) -> LeagueSnap
         live_opponent_score=live_opponent_score,
         any_games_started=any_games_started,
         first_kickoff=first_kickoff,
+        faab_enabled=faab_enabled,
+        faab_budget=faab_budget,
+        faab_remaining=faab_remaining,
     )
