@@ -6,6 +6,8 @@ as two separate focused calls, and writes a combined report per league.
 
 Usage:
     python main.py
+    python main.py --only lineup      # run just the lineup/watch agent
+    python main.py --only waivers     # run just the waiver-wire agent
     python main.py --regrade-week 3   # force-(re)grade one past week for
                                        # every league and exit without
                                        # fetching new recommendations; also
@@ -44,6 +46,11 @@ def main():
     parser.add_argument(
         "--regrade-week", type=int, default=None,
         help="Force-(re)grade this week for every league and exit, skipping new recommendations.",
+    )
+    parser.add_argument(
+        "--only", choices=["lineup", "waivers"], default=None,
+        help="Run just one agent instead of both: 'lineup' (start/sit + things to watch) "
+             "or 'waivers' (waiver-wire pickups).",
     )
     args = parser.parse_args()
 
@@ -114,20 +121,27 @@ def main():
                 podcast_channel, PODCAST_CACHE_DIR, podcast_max_episodes,
             )
 
-        print(f"  Week {snapshot.week} - {snapshot.team_name}. Asking {llm_provider} for lineup and waiver recommendations...")
-        lineup_text = analyst.get_lineup_recommendations(snapshot, podcast_excerpts, scorecard)
-        waiver_text = analyst.get_waiver_recommendations(snapshot, podcast_excerpts)
+        run_lineup = args.only in (None, "lineup")
+        run_waivers = args.only in (None, "waivers")
+
+        agents_desc = "lineup and waiver" if args.only is None else args.only
+        print(f"  Week {snapshot.week} - {snapshot.team_name}. Asking {llm_provider} for {agents_desc} recommendations...")
+        lineup_text = analyst.get_lineup_recommendations(snapshot, podcast_excerpts, scorecard) if run_lineup else None
+        waiver_text = analyst.get_waiver_recommendations(snapshot, podcast_excerpts) if run_waivers else None
 
         path = write_report(snapshot, lineup_text, waiver_text)
         history.record_calls(
-            slug, league.year, snapshot.week, snapshot, [lineup_text, waiver_text],
+            slug, league.year, snapshot.week, snapshot,
+            [text for text in (lineup_text, waiver_text) if text is not None],
             player_map=league.player_map, model=model_name, report_path=path,
         )
 
-        lineup_prose, _ = history.extract_calls_block(lineup_text)
-        waiver_prose, _ = history.extract_calls_block(waiver_text)
+        prose_parts = [
+            history.extract_calls_block(text)[0]
+            for text in (lineup_text, waiver_text) if text is not None
+        ]
         print(f"  Report written to {path}")
-        print("\n" + lineup_prose + "\n\n" + waiver_prose + "\n")
+        print("\n" + "\n\n".join(prose_parts) + "\n")
 
 
 if __name__ == "__main__":
