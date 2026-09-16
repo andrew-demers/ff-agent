@@ -142,10 +142,13 @@ WR, and TE below - they're broken into separate pools per position so a \
 strong option at a thin position can't get lost behind whichever position \
 is deepest. Then list the top 3-5 free agents worth adding this week as a \
 numbered list in strict priority order - #1 is the add you'd make first if \
-you could only make one - with a one-sentence reason each and who on the \
-current roster (if anyone) they'd replace. Weigh roster need (from ROSTER \
-DEPTH) alongside player quality and opportunity when ordering, not name \
-recognition.
+you could only make one - with a one-sentence reason each and a specific \
+current-roster player they'd replace. Every add needs a named drop, even \
+if the roster has a technically open bench spot - a real waiver claim \
+still needs one lined up in case it's needed, so name whichever rostered \
+player is currently least valuable at that position. Weigh roster need \
+(from ROSTER DEPTH) alongside player quality and opportunity when \
+ordering, not name recognition.
 Treat the kicker and D/ST slots as weekly streaming spots, not just \
 injury or bye backfills: every week, name the free-agent kicker and the \
 free-agent D/ST with the best matchup - use projected points, which \
@@ -179,14 +182,17 @@ every waiver call you actually made above (omit it entirely if you made \
 none), in this exact form and nothing else after it:
 
 <!--calls
-{"waivers": [{"add": "<player name>", "drop": "<player name or null>", "faab_bid": <dollar amount or null>}]}
+{"waivers": [{"add": "<player name>", "drop": "<player name>", "faab_bid": <dollar amount or null>}]}
 -->
 
-Set faab_bid to the dollar amount you suggested for that add, or null if \
-no FAAB BUDGET line was given (rotating priority league). Use each \
-player's exact name as given in the data above. This block is parsed by \
-code, not read by the owner - it must be the last thing in your response, \
-valid JSON inside the HTML comment, with no other text after it."""
+drop must always be a real roster player's name, matching the drop you \
+named in the section above - never null or omitted, even for a "stash for \
+later" or streaming pick. Set faab_bid to the dollar amount you suggested \
+for that add, or null if no FAAB BUDGET line was given (rotating priority \
+league). Use each player's exact name as given in the data above. This \
+block is parsed by code, not read by the owner - it must be the last \
+thing in your response, valid JSON inside the HTML comment, with no other \
+text after it."""
 
 
 def _format_player(p) -> str:
