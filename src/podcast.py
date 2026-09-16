@@ -232,6 +232,10 @@ def fetch_podcast_excerpts(player_names: list, current_week: int, channel: str,
                         "episode": ep["title"],
                         "timestamp": _format_timestamp(start),
                         "text": text,
+                        # "start_sit" or "waivers" - lets each downstream
+                        # analyst prompt show only the excerpts from its
+                        # own kind of episode.
+                        "kind": ep["kind"],
                     })
 
     return excerpts

@@ -149,10 +149,19 @@ def resolve_player(name: str, index: dict, player_map_by_name: dict = None) -> d
     return {"name": name, "player_id": None, "resolved_from": "unresolved"}
 
 
-def record_calls(slug: str, season: int, week: int, snapshot, report_text: str, *,
+def record_calls(slug: str, season: int, week: int, snapshot, report_texts: list, *,
                   player_map: dict = None, model: str = None, report_path: str = None) -> dict:
-    _, raw = extract_calls_block(report_text)
-    parsed_calls, capture_error = parse_calls(raw)
+    """report_texts is one raw model response per agent (lineup, waivers,
+    ...) - each carries its own trailing <!--calls--> block, so every one
+    gets extracted and merged into a single record."""
+    parsed_calls, capture_errors = [], []
+    for report_text in report_texts:
+        _, raw = extract_calls_block(report_text)
+        calls, error = parse_calls(raw)
+        parsed_calls.extend(calls)
+        if error:
+            capture_errors.append(error)
+    capture_error = "; ".join(capture_errors) if capture_errors else None
 
     index = build_player_index(snapshot)
     player_map_by_name = {}

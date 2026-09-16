@@ -3,7 +3,11 @@
 Pulls your roster, injury status, live in-week scoring, same-day player
 news, and available free agents from ESPN Fantasy Football (across any
 number of leagues) - plus this week's relevant Fantasy Footballers podcast
-analysis - and asks Claude for start/sit and waiver-wire recommendations.
+analysis - and asks Claude for recommendations as two focused calls: one
+for this week's starting lineup and things to watch, one for waiver-wire
+pickups. Splitting them keeps each call's prompt scoped to only the data
+it needs and keeps a long waiver take from crowding out the lineup call,
+or vice versa.
 It also tracks its own past calls and grades them once the results are in,
 so later runs can calibrate against how its projections have actually
 played out. Run it manually whenever you want an update - the morning
@@ -77,6 +81,27 @@ recommendations.
 
 ## What's in a report
 
+A report has two parts, each written by its own focused call to the model:
+
+- **Starting Lineup Changes / Things to Watch.** Start/sit calls for any
+  roster spot with a real decision to make, weighing recent-week trends,
+  projections, and the opponent's starters at the same position - plus
+  anything else worth watching (injuries, byes, hot/cold streaks).
+- **Waiver Wire Pickups.** Free agents are pulled as separate pools per
+  position (QB/RB/WR/TE, plus dedicated K and D/ST pools) so a strong
+  option at a thin position can't get crowded out by a deeper one. Picks
+  are prioritized by roster need (bench depth, single-point-of-failure
+  risk) over raw player quality. Kicker and D/ST are treated as weekly
+  streaming spots - the model names whoever has the best matchup every
+  week, not just when there's an injury - but those two always rank last,
+  since a QB/RB/WR/TE pickup that fills a real need outranks a one-week
+  streamer. The model is also asked to flag a speculative "stash for
+  later" pick when a thin position has a bye coming up in the next few
+  weeks, or when a free agent's ownership is running well ahead of their
+  start rate (a sign the league is already quietly stashing them).
+
+Supporting both of the above:
+
 - **Live data.** If any of this week's games have started, a `LIVE` block
   reflects real, already-scored points (via ESPN's live box scores) rather
   than pre-week projections, and the model is told to treat those players
@@ -85,18 +110,20 @@ recommendations.
   notes) is pulled from ESPN's own player-news feed, joined by player ID -
   more current than the static injury designation, which can go stale.
 - **Podcast analysis.** This week's relevant Fantasy Footballers episodes
-  (waiver wire / start-sit) are found on their YouTube channel and their
-  auto-generated captions are searched for mentions of your roster and
-  top free agents. It's expert opinion, not data - the report attributes
-  it explicitly, and captions are auto-transcribed so player names can be
-  garbled. Captions are cached under `cache/podcast/` so re-runs in the
-  same week don't re-fetch.
+  are found on their YouTube channel and classified as start/sit or
+  waiver-wire episodes; their auto-generated captions are searched for
+  mentions of your roster and top free agents, and each excerpt only feeds
+  the matching half of the report. It's expert opinion, not data - the
+  report attributes it explicitly, and captions are auto-transcribed so
+  player names can be garbled. Captions are cached under `cache/podcast/`
+  so re-runs in the same week don't re-fetch.
 - **Past results.** Each report's start/sit and waiver calls are logged to
   `history/<league>_<season>.jsonl`. Once a week's games are over, those
   calls get graded against what actually happened, and a summary (bench
   regret vs. the best legal lineup, and how far off ESPN's projections ran
-  by position) feeds into the next report as calibration. `history/` is
-  this tool's only durable state, so unlike `reports/` it isn't gitignored.
+  by position) feeds into the next lineup call as calibration. `history/`
+  is this tool's only durable state, so unlike `reports/` it isn't
+  gitignored.
 
 ## Notes
 
