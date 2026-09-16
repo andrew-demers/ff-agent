@@ -32,7 +32,8 @@ PODCAST_CACHE_DIR = os.path.join(os.path.dirname(__file__), "cache", "podcast")
 
 def _news_and_podcast_player_names(snapshot) -> list:
     players = (
-        snapshot.roster + snapshot.free_agents[:20]
+        snapshot.roster
+        + [p for pool in snapshot.free_agents_by_position.values() for p in pool[:5]]
         + snapshot.free_agent_kickers[:5] + snapshot.free_agent_defenses[:5]
     )
     return [p.name for p in players]

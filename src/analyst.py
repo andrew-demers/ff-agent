@@ -65,14 +65,35 @@ Produce a concise report with three sections:
    position(s) that are thinnest (fewest bench players) or carry the \
    biggest single-point-of-failure risk (a starter who's hurt or on bye \
    with no healthy same-position backup), and prioritize free agents that \
-   add insurance there. Then list the top 3-5 free agents worth adding \
+   add insurance there. Check the top available free agent at each of QB, \
+   RB, WR, and TE below - they're broken into separate pools per position \
+   so a strong option at a thin position can't get lost behind whichever \
+   position is deepest. Then list the top 3-5 free agents worth adding \
    this week as a numbered list in strict priority order - #1 is the add \
    you'd make first if you could only make one - with a one-sentence \
    reason each and who on the current roster (if anyone) they'd replace. \
    Weigh roster need (from ROSTER DEPTH) alongside player quality and \
-   opportunity when ordering, not name recognition. Consider the kicker \
-   and D/ST free-agent pools every week alongside skill positions, not \
-   just when there's an injury forcing the issue.
+   opportunity when ordering, not name recognition.
+   Treat the kicker and D/ST slots as weekly streaming spots, not just \
+   injury or bye backfills: every week, name the free-agent kicker and the \
+   free-agent D/ST with the best matchup - use projected points, which \
+   already bake in matchup strength, to find whoever is facing the \
+   weakest opponent - and include them in the list even when the current \
+   starter is healthy and has a game. Because a good matchup this week \
+   says nothing about next week, these two streaming adds always rank \
+   last, below every skill-position pickup - a QB/RB/WR/TE add that fills \
+   a real roster need outranks a one-week K or D/ST streamer every time.
+   Also look past this week: check UPCOMING BYES for a thin position (from \
+   ROSTER DEPTH) about to lose its starter to a bye, and check whether any \
+   free agent's percent owned is running well ahead of percent started - \
+   that gap means the league is already quietly stashing that player \
+   before their role is starting-caliber yet. Where either signal points \
+   to a free agent worth grabbing now before they're gone, name them as a \
+   separate, explicitly-labeled "stash for later" pick with the week or \
+   reason it should pay off - and rank it below this week's immediate-need \
+   adds (though still ahead of the K/D-ST streamers), since it isn't \
+   solving anything yet. Skip this note entirely if nothing on the board \
+   fits rather than forcing a speculative pick that isn't there.
 3. Things to Watch: flag anything else worth keeping an eye on - injuries, \
    byes, hot or cold streaks in the recent-week data, and any part of this \
    week's matchup against the opponent's roster that could swing the \
@@ -109,16 +130,18 @@ def _format_player(p) -> str:
 
 
 def _format_roster_depth(snapshot: LeagueSnapshot) -> str:
-    """Bench depth by position, plus any starter who's hurt or on bye with
-    no healthy same-position bench player behind them. Computed directly
-    from the roster rather than left for the model to eyeball from a flat
-    15-player list, so 'what am I lacking' is grounded in an actual count."""
+    """Bench depth by position, any starter who's hurt or on bye with no
+    healthy same-position bench player behind them, and any roster player
+    with a bye coming up in the next few weeks. Computed directly from the
+    roster rather than left for the model to eyeball from a flat 15-player
+    list, so 'what am I lacking, now or soon' is grounded in an actual
+    count instead of guessed at."""
     by_position = defaultdict(list)
     for p in snapshot.roster:
         if p.lineup_slot != "IR":
             by_position[p.position].append(p)
 
-    depth_lines, risk_lines = [], []
+    depth_lines, risk_lines, bye_lines = [], [], []
     for position, players in sorted(by_position.items()):
         starters = [p for p in players if p.lineup_slot != "BE"]
         bench = [p for p in players if p.lineup_slot == "BE"]
@@ -133,9 +156,15 @@ def _format_roster_depth(snapshot: LeagueSnapshot) -> str:
                 reason = "BYE" if starter.pro_opponent == "BYE" else starter.injury_status
                 risk_lines.append(f"  {position}: {starter.name} ({reason}), no healthy bench behind them")
 
+        for p in sorted(players, key=lambda p: p.next_bye_week or 0):
+            if p.next_bye_week:
+                bye_lines.append(f"  {position}: {p.name} on bye in week {p.next_bye_week}")
+
     section = "ROSTER DEPTH (bench count by position):\n" + "\n".join(depth_lines)
     if risk_lines:
         section += "\n\nNO BACKUP AT RISK:\n" + "\n".join(risk_lines)
+    if bye_lines:
+        section += "\n\nUPCOMING BYES (next 4 weeks):\n" + "\n".join(bye_lines)
     return section
 
 
@@ -150,7 +179,8 @@ def _format_live_block(snapshot: LeagueSnapshot) -> str:
 
 def _news_players(snapshot: LeagueSnapshot) -> list:
     return (
-        snapshot.roster + snapshot.free_agents[:20]
+        snapshot.roster
+        + [p for pool in snapshot.free_agents_by_position.values() for p in pool[:5]]
         + snapshot.free_agent_kickers[:5] + snapshot.free_agent_defenses[:5]
     )
 
@@ -179,10 +209,21 @@ def _format_podcast_section(podcast_excerpts: list) -> str:
     return "\n".join(lines)
 
 
+def _format_free_agents_by_position(snapshot: LeagueSnapshot) -> str:
+    """One labeled section per skill position rather than a single list
+    sorted across all of them, so the top available QB/TE can't get buried
+    under a flood of higher-owned RBs/WRs."""
+    sections = []
+    for position, players in snapshot.free_agents_by_position.items():
+        lines = "\n".join(_format_player(p) for p in players[:5])
+        sections.append(f"TOP AVAILABLE FREE AGENT {position}s:\n{lines}")
+    return "\n\n".join(sections)
+
+
 def build_user_prompt(snapshot: LeagueSnapshot, podcast_excerpts: list = None,
                        feedback: str = "") -> str:
     roster_lines = "\n".join(_format_player(p) for p in snapshot.roster)
-    fa_lines = "\n".join(_format_player(p) for p in snapshot.free_agents[:20])
+    fa_sections = _format_free_agents_by_position(snapshot)
     k_lines = "\n".join(_format_player(p) for p in snapshot.free_agent_kickers[:5])
     dst_lines = "\n".join(_format_player(p) for p in snapshot.free_agent_defenses[:5])
     opponent_lines = "\n".join(_format_player(p) for p in snapshot.opponent_starters)
@@ -205,7 +246,7 @@ def build_user_prompt(snapshot: LeagueSnapshot, podcast_excerpts: list = None,
         f"OPPONENT'S PROJECTED STARTERS:\n{opponent_lines}\n\n"
         f"CURRENT ROSTER:\n{roster_lines}\n\n"
         f"{_format_roster_depth(snapshot)}\n\n"
-        f"TOP AVAILABLE FREE AGENTS (skill positions):\n{fa_lines}\n\n"
+        f"{fa_sections}\n\n"
         f"AVAILABLE FREE AGENT KICKERS:\n{k_lines}\n\n"
         f"AVAILABLE FREE AGENT DEFENSES/D-ST:\n{dst_lines}\n"
     )

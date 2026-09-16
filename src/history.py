@@ -127,7 +127,11 @@ def build_player_index(snapshot) -> dict:
     index = {}
     for p in snapshot.roster:
         index[_normalize_name(p.name)] = (p.player_id, "roster")
-    for group in (snapshot.free_agents, snapshot.free_agent_kickers, snapshot.free_agent_defenses):
+    free_agent_groups = (
+        list(snapshot.free_agents_by_position.values())
+        + [snapshot.free_agent_kickers, snapshot.free_agent_defenses]
+    )
+    for group in free_agent_groups:
         for p in group:
             index.setdefault(_normalize_name(p.name), (p.player_id, "free_agents"))
     return index

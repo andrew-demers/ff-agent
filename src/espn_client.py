@@ -1,10 +1,10 @@
 """Wraps espn_api to pull the data we need for a single league: current
-roster/lineup, injury status, top available free agents (including
-dedicated kicker and D/ST pools, which otherwise get crowded out of the
-general free-agent list), this week's matchup, each rostered player's
-week-by-week scoring history so far this season, and - when games for the
-current week are underway or finished - live actual scoring pulled from
-ESPN's box scores."""
+roster/lineup, injury status, top available free agents (as dedicated
+per-position pools - QB/RB/WR/TE/K/D-ST - so no position's best option gets
+crowded out by a single list sorted across all of them), this week's
+matchup, each rostered player's week-by-week scoring history so far this
+season, and - when games for the current week are underway or finished -
+live actual scoring pulled from ESPN's box scores."""
 
 import sys
 from dataclasses import dataclass, field
@@ -18,6 +18,16 @@ BENCH_SLOTS = {"BE", "IR"}
 
 # How many past weeks of actual points to include per roster player.
 RECENT_WEEKS_LOOKBACK = 4
+
+# How many weeks ahead to check for a roster player's next bye, so waiver
+# adds can get ahead of a bye before that position gets crowded on the wire
+# closer to it.
+FUTURE_WEEKS_LOOKAHEAD = 4
+
+# Fetched as their own guaranteed per-position pools (see below) so a top
+# option at a thin position can't get crowded out of a single list sorted
+# by overall ownership.
+SKILL_POSITIONS = ("QB", "RB", "WR", "TE")
 
 
 @dataclass
@@ -34,6 +44,7 @@ class PlayerSnapshot:
     player_id: int = 0
     recent_points: list = field(default_factory=list)
     pro_opponent: str = ""
+    next_bye_week: int = None
     live_points: float = None
     game_status: str = ""
     news: list = field(default_factory=list)
@@ -49,7 +60,7 @@ class LeagueSnapshot:
     opponent_name: str
     opponent_record: str
     roster: list = field(default_factory=list)
-    free_agents: list = field(default_factory=list)
+    free_agents_by_position: dict = field(default_factory=dict)
     opponent_starters: list = field(default_factory=list)
     free_agent_kickers: list = field(default_factory=list)
     free_agent_defenses: list = field(default_factory=list)
@@ -94,6 +105,24 @@ def _pro_opponent(player, current_week: int = None) -> str:
     return ""
 
 
+def _next_bye_week(player, current_week: int) -> int:
+    """The next week within FUTURE_WEEKS_LOOKAHEAD that this rostered player
+    has no scheduled game, i.e. their upcoming bye - so waiver adds can plan
+    for a thin position's bye before it's this week's problem.
+
+    Only rostered Player objects carry the full-season `schedule` dict this
+    depends on; free agents only carry pro_opponent for the current week, so
+    this always returns None for them.
+    """
+    schedule = getattr(player, "schedule", None)
+    if not schedule:
+        return None
+    for week in range(current_week + 1, current_week + 1 + FUTURE_WEEKS_LOOKAHEAD):
+        if str(week) not in schedule:
+            return week
+    return None
+
+
 def _snapshot_player(player, current_week: int = None, live_player=None) -> PlayerSnapshot:
     live_points = None
     game_status = ""
@@ -114,6 +143,7 @@ def _snapshot_player(player, current_week: int = None, live_player=None) -> Play
         player_id=getattr(player, "playerId", 0),
         recent_points=_recent_points(player, current_week) if current_week else [],
         pro_opponent=_pro_opponent(player, current_week),
+        next_bye_week=_next_bye_week(player, current_week) if current_week else None,
         live_points=live_points,
         game_status=game_status,
     )
@@ -178,8 +208,7 @@ def build_league(league_id: int, year: int, espn_s2: str, swid: str) -> League:
     return League(league_id=league_id, year=year, espn_s2=espn_s2, swid=swid)
 
 
-def fetch_league_snapshot(name: str, league: League, team_id: int,
-                           free_agent_size: int = 30) -> LeagueSnapshot:
+def fetch_league_snapshot(name: str, league: League, team_id: int) -> LeagueSnapshot:
     current_week = league.current_week
 
     team = next((t for t in league.teams if t.team_id == team_id), None)
@@ -201,13 +230,14 @@ def fetch_league_snapshot(name: str, league: League, team_id: int,
     first_kickoff = min(kickoffs) if kickoffs else None
     any_games_started = any(p.game_status in ("in progress", "final") for p in roster)
 
-    free_agents = [
-        _snapshot_player(p)
-        for p in league.free_agents(size=free_agent_size)
-        if p.position not in ("K", "D/ST")
-    ]
-    # Surface the most relevant waiver targets first: highest recent trend, then projection.
-    free_agents.sort(key=lambda p: (p.percent_started, p.projected_points), reverse=True)
+    # Pulled as separate per-position pools, not one list sorted by overall
+    # ownership - otherwise a thin position's best available option can get
+    # buried under a flood of higher-owned players at a deeper position.
+    free_agents_by_position = {}
+    for position in SKILL_POSITIONS:
+        pool = [_snapshot_player(p) for p in league.free_agents(position=position, size=8)]
+        pool.sort(key=lambda p: (p.percent_started, p.projected_points), reverse=True)
+        free_agents_by_position[position] = pool
 
     # Kickers and D/ST rarely crack the top of the general free-agent pool
     # (it's sorted by percent owned across all positions), so pull them as
@@ -235,7 +265,11 @@ def fetch_league_snapshot(name: str, league: League, team_id: int,
     # Same-day news, joined by ESPN's own player id - only for the players
     # that actually reach the prompt, so we're not paginating news for 30
     # free agents when only the top slice of each pool gets shown.
-    news_candidates = roster + free_agents[:20] + free_agent_kickers[:5] + free_agent_defenses[:5]
+    news_candidates = (
+        roster
+        + [p for pool in free_agents_by_position.values() for p in pool[:5]]
+        + free_agent_kickers[:5] + free_agent_defenses[:5]
+    )
     news_by_id = fetch_player_news([p.player_id for p in news_candidates])
     for p in news_candidates:
         p.news = news_by_id.get(p.player_id, [])
@@ -249,7 +283,7 @@ def fetch_league_snapshot(name: str, league: League, team_id: int,
         opponent_name=opponent.team_name,
         opponent_record=f"{opponent.wins}-{opponent.losses}-{opponent.ties}",
         roster=roster,
-        free_agents=free_agents,
+        free_agents_by_position=free_agents_by_position,
         opponent_starters=opponent_starters,
         free_agent_kickers=free_agent_kickers,
         free_agent_defenses=free_agent_defenses,
